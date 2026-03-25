@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
+    <title>Glamoure AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #0d0b14;
+            --card-bg: #191624;
+            --primary: #7b2cbf;
+            --accent: #e0aaff;
+            --danger: #ff0054;
+            --border: #3c096c;
+        }
+        body { 
+            font-family: 'Segoe UI', Roboto, sans-serif; 
+            background-color: var(--bg-dark); color: #e0e0e0; 
+            margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
+        
+        /* HEADER */
+        header { 
+            background: linear-gradient(135deg, #240046, #5a189a); 
+            padding: 15px; text-align: center; font-weight: 700; font-size: 1.2rem; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 10;
+        }
+
+        /* SEARCH & FILTER BAR */
+        #toolbar {
+            background: #12101b; padding: 15px; border-bottom: 1px solid var(--border);
+            display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+        }
+        .tool-input {
+            background: #191624; border: 1px solid var(--primary); color: white;
+            padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; outline: none;
+        }
+        .tool-input:focus { border-color: var(--accent); }
+        #search-box { flex-grow: 1; max-width: 300px; }
+
+        /* MAIN LIST AREA */
+        #main-container { 
+            flex: 1; overflow-y: auto; padding: 20px; 
+            scrollbar-width: thin; scrollbar-color: var(--primary) var(--bg-dark);
+        }
+
+        /* Estilos para los botones de acción en la tarjeta */
+        .meta-actions {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 5px;
+            transition: transform 0.2s, color 0.2s;
+        }
+
+        .btn-download { color: var(--accent); text-decoration: none; }
+        .btn-download:hover { color: white; }
+
+        .btn-delete { color: var(--danger); }
+        .btn-delete:hover { transform: scale(1.2); color: #ff0000; }
+
+        /* INPUT MATERIA (FLOTANTE O EN EL CONTROL) */
+        .input-group { margin-bottom: 20px; text-align: center; }
+        .materia-input {
+            background: #191624; border: 1px solid var(--primary); color: white;
+            padding: 12px; border-radius: 8px; width: 90%; font-size: 16px;
+            text-align: center; outline: none; transition: 0.3s;
+        }
+
+        /* ACORDEONES (VENTANITAS) */
+        .card { 
+            background: var(--card-bg); border: 1px solid var(--border); 
+            border-radius: 12px; margin-bottom: 15px; overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .card-header {
+            padding: 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            background: rgba(60, 9, 108, 0.3);
+        }
+        .card-header:hover { background: rgba(60, 9, 108, 0.6); }
+        
+        .card-title-group { display: flex; flex-direction: column; gap: 5px; }
+        .card-materia { 
+            font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px; 
+            color: var(--accent); font-weight: bold; 
+        }
+        .card-title { font-weight: 600; font-size: 1.1em; color: white; }
+        
+        .card-icon { transition: transform 0.3s; color: var(--primary); }
+        .card.expanded .card-icon { transform: rotate(180deg); }
+
+        .card-body { 
+            max-height: 0; overflow: hidden; transition: max-height 0.4s ease-out; 
+            padding: 0 20px; opacity: 0;
+        }
+        .card.expanded .card-body { 
+            padding: 20px; opacity: 1; border-top: 1px solid var(--border);
+        }
+
+        pre { white-space: pre-wrap; font-family: inherit; color: #d8d8eb; font-size: 0.95em; line-height: 1.6; margin: 0; }
+        
+        .meta { 
+            margin-top: 15px; padding-top: 10px; border-top: 1px dashed var(--border);
+            display: flex; justify-content: space-between; font-size: 0.85em; color: #999;
+        }
+
+        /* CONTROLS (BOTTOM) */
+        #controls { 
+            background: #12101b; padding: 20px; border-top: 1px solid var(--border); 
+            display: flex; gap: 10px; flex-direction: column; align-items: center;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+        }
+        .buttons-row { display: flex; gap: 10px; width: 100%; max-width: 600px; }
+        
+        button { 
+            border: none; padding: 15px; border-radius: 50px; 
+            font-size: 1rem; font-weight: bold; cursor: pointer; flex: 1;
+            text-transform: uppercase; letter-spacing: 1px; display: flex; 
+            align-items: center; justify-content: center; gap: 10px;
+            transition: transform 0.2s; color: white;
+        }
+        button:active { transform: scale(0.96); }
+
+        #btn-record { background: linear-gradient(135deg, var(--primary), #9d4edd); }
+        #btn-stop { background: linear-gradient(135deg, var(--danger), #ff5400); display: none; }
+        #btn-upload { background: #3c096c; border: 1px solid var(--primary); }
+
+        /* ESTADOS */
+        .recording-pulse { 
+            color: var(--danger); font-weight: bold; text-align: center; 
+            margin-bottom: 10px; animation: pulse 1.5s infinite; display: none;
+        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        #status-panel { display: none; text-align: center; margin-bottom: 15px; width: 100%; }
+        .progress-bar { height: 4px; width: 100%; background: var(--accent); animation: progress 2s infinite ease-in-out; }
+        @keyframes progress { 0% { transform: scaleX(0); } 50% { transform: scaleX(0.5); } 100% { transform: scaleX(1); transform-origin: right; } }
+
+        /* Estilos para el contenido Markdown renderizado */
+        .markdown-content {
+            color: #d8d8eb;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        /* Títulos */
+        .markdown-content h1, 
+        .markdown-content h2, 
+        .markdown-content h3 {
+            color: var(--accent);
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .markdown-content h1 { font-size: 1.5em; border-bottom: 1px solid var(--primary); padding-bottom: 5px; }
+        .markdown-content h2 { font-size: 1.3em; }
+        .markdown-content h3 { font-size: 1.1em; }
+
+        /* Negritas */
+        .markdown-content strong {
+            color: #fff;
+            font-weight: bold;
+            text-shadow: 0 0 5px rgba(224, 170, 255, 0.4); /* Brillo suave */
+        }
+
+        /* Listas */
+        .markdown-content ul, .markdown-content ol {
+            padding-left: 20px;
+            margin-bottom: 15px;
+        }
+        .markdown-content li {
+            margin-bottom: 5px;
+        }
+
+        /* OCULTO */
+        #file-input-hidden { display: none; }
+
+        /* Botón Copiar (Azul) */
+        .btn-copy { color: #4cc9f0; }
+        .btn-copy:hover { transform: scale(1.2); color: #fff; }
+
+        /* Botón PDF (Rojo/Naranja) */
+        .btn-pdf { color: #f72585; }
+        .btn-pdf:hover { transform: scale(1.2); color: #fff; }
+
+        /* ESTILO OCULTO PARA EL PDF (Hoja blanca) */
+        #pdf-template {
+            display: none; /* No se ve en la pantalla */
+            font-family: 'Helvetica', sans-serif;
+            background: white;
+            color: black;
+            padding: 40px;
+            font-size: 14pt;
+            line-height: 1.5;
+        }
+        #pdf-template h1 { color: #240046; border-bottom: 2px solid #5a189a; }
+        #pdf-template h2 { color: #5a189a; margin-top: 20px; }
+        #pdf-template strong { color: #7b2cbf; }
+
+    </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<header>🎓 Glamoure AI</header>
+
+<div id="toolbar">
+    <input type="text" id="search-box" class="tool-input" placeholder="🔍 Buscar en apuntes...">
+    
+    <select id="filter-materia" class="tool-input">
+        <option value="all">📚 Todas las materias</option>
+        </select>
+    
+    <select id="sort-order" class="tool-input">
+        <option value="date-desc">📅 Más recientes</option>
+        <option value="date-asc">📅 Más antiguos</option>
+        <option value="alpha">🔤 Título A-Z</option>
+    </select>
+</div>
+
+<div id="main-container">
+    <div class="input-group" id="input-area">
+        <input type="text" id="materia" class="materia-input" placeholder="Nombre de la Materia (Ej: Física)" autocomplete="off">
+    </div>
+
+    <div class="recording-pulse" id="rec-indicator">🔴 GRABANDO...</div>
+    
+    <div id="status-panel">
+        <div style="margin-bottom:5px; color:#e0aaff;" id="status-msg">Procesando...</div>
+        <div style="width:100%; background:#240046; height:4px;"><div class="progress-bar"></div></div>
+    </div>
+
+    <div id="historial-lista"></div>
+    <div id="empty-state" style="text-align: center; color: #5a189a; margin-top: 50px; display: none;">
+        <i class="fas fa-ghost fa-3x"></i><br><br>No hay apuntes aún.
+    </div>
+</div>
+
+<div id="controls">
+    <div class="buttons-row">
+        <input type="file" id="file-input-hidden" accept="audio/*">
+        
+        <button id="btn-upload" onclick="triggerUpload()">
+            <i class="fas fa-upload"></i> Subir Audio
+        </button>
+
+        <button id="btn-record" onclick="startRecording()">
+            <i class="fas fa-microphone"></i> Grabar
+        </button>
+        
+        <button id="btn-stop" onclick="stopRecording()">
+            <i class="fas fa-stop"></i> Terminar
+        </button>
+    </div>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let globalHistory = []; // Almacenamos todo el historial aquí para filtrar localmente
+
+    // --- INICIALIZACIÓN ---
+    window.onload = loadHistory;
+
+    // --- LÓGICA DE HISTORIAL Y FILTROS ---
+    async function loadHistory() {
+        try {
+            const response = await fetch('/historial');
+            globalHistory = await response.json();
+            populateMateriasFilter();
+            applyFilters(); // Esto renderizará la lista
+        } catch(e) { console.error("Error cargando historial", e); }
+    }
+
+    function populateMateriasFilter() {
+        const select = document.getElementById('filter-materia');
+        // Obtener materias únicas
+        const materias = [...new Set(globalHistory.map(item => item.materia || "General"))];
+        
+        // Guardar la selección actual si existe
+        const currentVal = select.value;
+        
+        select.innerHTML = '<option value="all">📚 Todas las materias</option>';
+        materias.sort().forEach(mat => {
+            const option = document.createElement('option');
+            option.value = mat;
+            option.innerText = mat;
+            select.appendChild(option);
+        });
+
+        // Restaurar selección si sigue existiendo
+        if (materias.includes(currentVal)) select.value = currentVal;
+    }
+
+    function applyFilters() {
+        const searchVal = document.getElementById('search-box').value.toLowerCase();
+        const filterMat = document.getElementById('filter-materia').value;
+        const sortVal = document.getElementById('sort-order').value;
+
+        let filtered = globalHistory.filter(item => {
+            const matchesSearch = (item.titulo.toLowerCase().includes(searchVal) || item.resumen.toLowerCase().includes(searchVal));
+            const matchesMat = filterMat === 'all' || (item.materia || "General") === filterMat;
+            return matchesSearch && matchesMat;
+        });
+
+        // Ordenar
+        filtered.sort((a, b) => {
+            if (sortVal === 'alpha') return a.titulo.localeCompare(b.titulo);
+            
+            // Asumiendo formato DD/MM HH:MM. Convertimos a timestamp para ordenar
+            // Truco rápido: como es string, necesitamos parsearlo un poco o confiar en el ID si es cronológico.
+            // Para robustez, usaremos el ID que es UUID (no sirve) o string compare si el formato es ISO. 
+            // Como el formato python es "%d/%m %H:%M", es difícil ordenar directo.
+            // MEJORA: Usaremos el índice del array original si asumimos que viene ordenado del backend (insert(0)).
+            // Si queremos ordenar por fecha real, lo ideal es guardar timestamp en backend.
+            // Por ahora, asumiremos que el backend los manda del más nuevo al más viejo.
+            
+            // Si el backend siempre hace insert(0), globalHistory[0] es el más nuevo.
+            return 0; // El orden del array ya es cronológico desc
+        });
+
+        if (sortVal === 'date-asc') filtered.reverse();
+
+        renderList(filtered);
+    }
+
+    // Event Listeners para filtros
+    document.getElementById('search-box').addEventListener('input', applyFilters);
+    document.getElementById('filter-materia').addEventListener('change', applyFilters);
+    document.getElementById('sort-order').addEventListener('change', applyFilters);
+
+    function renderList(data) {
+        const container = document.getElementById('historial-lista');
+        const emptyState = document.getElementById('empty-state');
+        container.innerHTML = '';
+
+        if (data.length === 0) {
+            emptyState.style.display = 'block';
+            return;
+        }
+        emptyState.style.display = 'none';
+
+        data.forEach(item => {
+            const mat = item.materia ? item.materia : "General";
+            const itemId = item.id || item.task_id;
+            
+            // Convertir Markdown a HTML
+            const htmlContent = marked.parse(item.resumen);
+
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            // Renderizado de la tarjeta
+            card.innerHTML = `
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="card-title-group">
+                        <span class="card-materia">${mat}</span>
+                        <div class="card-title">${item.titulo}</div>
+                    </div>
+                    <i class="fas fa-chevron-down card-icon"></i>
+                </div>
+                <div class="card-body">
+                    <div id="content-${itemId}" class="markdown-content">${htmlContent}</div>
+
+                    <div class="meta">
+                        <span><i class="far fa-clock"></i> ${item.fecha}</span>
+                        
+                        <div class="meta-actions">
+                            <button onclick="copyToClipboard('content-${itemId}', this)" class="btn-icon btn-copy" title="Copiar texto">
+                                <i class="fas fa-copy"></i>
+                            </button>
+
+                            <button onclick="downloadPDF('${itemId}', '${item.titulo}', '${mat}')" class="btn-icon btn-pdf" title="Descargar PDF">
+                                <i class="fas fa-file-pdf"></i>
+                            </button>
+
+                            <button onclick="deleteChat('${itemId}')" class="btn-icon btn-delete" title="Eliminar">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    // --- FUNCIÓN COPIAR ---
+    function copyToClipboard(elementId, btnElement) {
+        // Obtenemos el texto limpio (sin etiquetas HTML)
+        const text = document.getElementById(elementId).innerText;
+        
+        navigator.clipboard.writeText(text).then(() => {
+            // Feedback visual: Cambiar icono a 'check' por 2 segundos
+            const originalIcon = btnElement.innerHTML;
+            btnElement.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => {
+                btnElement.innerHTML = originalIcon;
+            }, 2000);
+        }).catch(err => {
+            alert('Error al copiar: ' + err);
+        });
+    }
+
+    // --- FUNCIÓN DESCARGAR PDF ---
+    function downloadPDF(elementId, titulo, materia) {
+        const contentDiv = document.getElementById(`content-${elementId}`);
+        
+        // 1. Crear un contenedor temporal con estilo de "Hoja de Papel"
+        // (Esto es necesario para que el PDF sea blanco y negro, no oscuro como la app)
+        const element = document.createElement('div');
+        element.innerHTML = `
+            <div style="font-family: Helvetica, sans-serif; color: black; background: white; padding: 20px;">
+                <h1 style="color: #240046; border-bottom: 2px solid #5a189a;">${titulo}</h1>
+                <p style="color: #666; font-size: 12px; margin-bottom: 30px;">MATERIA: ${materia.toUpperCase()} | GLAMOURE AI</p>
+                <div style="font-size: 14px; line-height: 1.6;">
+                    ${contentDiv.innerHTML}
+                </div>
+            </div>
+        `;
+
+        // 2. Configurar opciones del PDF
+        const opt = {
+            margin:       10, // márgenes en mm
+            filename:     `${titulo}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2 }, // Mejor calidad
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        // 3. Generar y Guardar
+        html2pdf().set(opt).from(element).save();
+    }
+
+    // --- FUNCIÓN QUE FALTA: BORRAR ---
+    async function deleteChat(id) {
+        // 1. Confirmación de seguridad
+        if (!confirm("⚠️ ¿Estás seguro de que quieres eliminar este chat permanentemente?")) {
+            return;
+        }
+
+        try {
+            // 2. Llamada al servidor (Backend)
+            const response = await fetch(`/delete/${id}`, { method: 'DELETE' });
+            const result = await response.json();
+
+            if (response.ok) {
+                // 3. Si se borró bien, recargamos la lista
+                await loadHistory();
+            } else {
+                alert("Error al eliminar: " + (result.error || "Desconocido"));
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Error de conexión al intentar borrar.");
+        }
+    }
+
+    // --- FUNCIÓN PARA EXPANDIR/COLAPSAR ---
+    function toggleCard(header) {
+        const card = header.parentElement;
+        const body = card.querySelector('.card-body');
+        
+        if (card.classList.contains('expanded')) {
+            // Si ya está abierto, lo cerramos
+            card.classList.remove('expanded');
+            body.style.maxHeight = null;
+        } else {
+            // Si está cerrado, calculamos su altura real y lo abrimos
+            card.classList.add('expanded');
+            body.style.maxHeight = body.scrollHeight + "px";
+        }
+    }
+
+    // --- LÓGICA DE GRABACIÓN Y SUBIDA ---
+
+    function triggerUpload() {
+        const materiaVal = document.getElementById('materia').value;
+        if (materiaVal.trim() === "") {
+            alert("⚠️ Por favor, escribe el nombre de la materia antes de subir el archivo.");
+            document.getElementById('materia').focus();
+            return;
+        }
+        document.getElementById('file-input-hidden').click();
+    }
+
+    // Detectar selección de archivo
+    document.getElementById('file-input-hidden').addEventListener('change', function(e) {
+        if (this.files && this.files[0]) {
+            handleFileUpload(this.files[0]);
+        }
+    });
+
+    async function handleFileUpload(file) {
+        updateUIState('processing');
+        document.getElementById('status-msg').innerText = "Subiendo archivo...";
+        
+        const materiaVal = document.getElementById('materia').value || "General";
+        const formData = new FormData();
+        formData.append("audio", file);
+        formData.append("materia", materiaVal);
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error("Error en subida");
+            const data = await response.json();
+            pollServer(data.task_id);
+        } catch (error) {
+            alert("Error: " + error);
+            updateUIState('idle');
+        }
+        // Limpiar input file para permitir subir el mismo archivo de nuevo si falla
+        document.getElementById('file-input-hidden').value = ''; 
+    }
+
+    // (La lógica de grabación es idéntica, solo ajustamos UI)
+    async function startRecording() {
+        const materiaInput = document.getElementById('materia');
+        if (materiaInput.value.trim() === "") materiaInput.value = "General";
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            let options = { mimeType: 'audio/webm' };
+            // Codecs fallbacks...
+            
+            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder.ondataavailable = event => { if (event.data.size > 0) audioChunks.push(event.data); };
+            mediaRecorder.onstop = uploadRecording;
+            audioChunks = [];
+            mediaRecorder.start();
+            
+            updateUIState('recording');
+        } catch (err) { alert("Error micrófono: " + err); }
+    }
+
+    function stopRecording() { mediaRecorder.stop(); }
+
+    async function uploadRecording() {
+        updateUIState('processing');
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const materiaVal = document.getElementById('materia').value;
+        
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "grabacion.webm");
+        formData.append("materia", materiaVal);
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error("Error subida");
+            const data = await response.json();
+            pollServer(data.task_id);
+        } catch (error) {
+            alert("Error: " + error);
+            updateUIState('idle');
+        }
+    }
+
+    function pollServer(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/status/${taskId}`);
+                if (res.status === 404) return;
+                const data = await res.json();
+
+                if (data.status === 'completed') {
+                    clearInterval(interval);
+                    // Recargar historial completo para que funcionen los filtros
+                    await loadHistory(); 
+                    updateUIState('idle');
+                    document.getElementById('materia').value = "";
+                } else if (data.status === 'error') {
+                    clearInterval(interval);
+                    alert("Error: " + data.message);
+                    updateUIState('idle');
+                } else {
+                    document.getElementById('status-msg').innerText = data.message;
+                }
+            } catch (e) { console.error(e); }
+        }, 2000);
+    }
+
+    function updateUIState(state) {
+        const btnRec = document.getElementById('btn-record');
+        const btnStop = document.getElementById('btn-stop');
+        const btnUpload = document.getElementById('btn-upload');
+        const recInd = document.getElementById('rec-indicator');
+        const statusPanel = document.getElementById('status-panel');
+        const inputArea = document.getElementById('input-area');
+
+        if (state === 'recording') {
+            btnRec.style.display = 'none';
+            btnUpload.style.display = 'none'; // Ocultar subida
+            btnStop.style.display = 'flex'; // Usamos flex para centrar
+            recInd.style.display = 'block';
+            statusPanel.style.display = 'none';
+            inputArea.style.display = 'none';
+        } else if (state === 'processing') {
+            btnRec.style.display = 'none';
+            btnUpload.style.display = 'none';
+            btnStop.style.display = 'none';
+            recInd.style.display = 'none';
+            statusPanel.style.display = 'block';
+            inputArea.style.display = 'none';
+        } else { // idle
+            btnRec.style.display = 'flex';
+            btnUpload.style.display = 'flex';
+            btnStop.style.display = 'none';
+            recInd.style.display = 'none';
+            statusPanel.style.display = 'none';
+            inputArea.style.display = 'block';
+        }
+    }
+</script>
+</body>
+</html>

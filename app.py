@@ -6,7 +6,7 @@ import uuid
 import time
 import site
 import sys
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from flask_cors import CORS
 
 # --- 1. CORRECCIÓN GPU NVIDIA (NO TOCAR) ---
@@ -30,6 +30,7 @@ if os.name == 'nt':
 
 from faster_whisper import WhisperModel
 import google.generativeai as genai
+from pydub import AudioSegment
 
 app = Flask(__name__)
 CORS(app)
@@ -83,11 +84,13 @@ except:
 
 # Carpetas
 DATA_DIR = "datos_clases"
+AUDIOS_DIR = os.path.join(DATA_DIR, "audios_comprimidos")
 os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(AUDIOS_DIR, exist_ok=True)
 HISTORIAL_FILE = os.path.join(DATA_DIR, "historial.json")
 active_tasks = {}
 
-def guardar_en_historial(titulo, materia, resumen, fecha):
+def guardar_en_historial(titulo, materia, resumen, fecha, audios_paths=None):
     historial = []
     if os.path.exists(HISTORIAL_FILE):
         with open(HISTORIAL_FILE, 'r', encoding='utf-8') as f:
@@ -101,7 +104,8 @@ def guardar_en_historial(titulo, materia, resumen, fecha):
         "titulo": titulo,
         "materia": materia,
         "resumen": resumen,
-        "fecha": fecha
+        "fecha": fecha,
+        "audios": audios_paths or []
     }
 
     historial.insert(0, nuevo_item)
@@ -111,23 +115,45 @@ def guardar_en_historial(titulo, materia, resumen, fecha):
 
     return nuevo_item
 
-def background_processing(task_id, file_path, materia):
+def background_processing(task_id, file_paths, materia):
     try:
         # FASE 1: TRANSCRIPCIÓN
         active_tasks[task_id]['status'] = 'transcribing'
         active_tasks[task_id]['message'] = 'Transcribiendo (Whisper GPU)...'
         
-        print(f"[{task_id}] 🎙️ Transcribiendo para {materia}...")
+        print(f"[{task_id}] 🎙️ Transcribiendo {len(file_paths)} audio(s) para {materia}...")
         start_time = time.time()
         
-        segments, info = model.transcribe(file_path, beam_size=5, language="es")
         texto_completo = ""
-        for segment in segments: texto_completo += segment.text + " "
+        for i, file_path in enumerate(file_paths):
+            print(f"[{task_id}] Procesando archivo {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+            segments, info = model.transcribe(file_path, beam_size=5, language="es")
+            for segment in segments: texto_completo += segment.text + " "
             
         duracion = time.time() - start_time
-        print(f"[{task_id}] ✅ Audio listo en {duracion:.2f}s")
+        print(f"[{task_id}] ✅ Todos los audios listos en {duracion:.2f}s")
         
-        if len(texto_completo) < 2: raise Exception("El audio parece vacío.")
+        if len(texto_completo) < 2: raise Exception("Los audios parecen vacíos.")
+
+        # FASE 1.5: COMPRIMIR AUDIOS
+        active_tasks[task_id]['status'] = 'compressing'
+        active_tasks[task_id]['message'] = 'Comprimiendo audios...'
+        print(f"[{task_id}] 📦 Comprimiendo {len(file_paths)} audio(s)...")
+        
+        compressed_paths = []
+        for i, file_path in enumerate(file_paths):
+            try:
+                audio = AudioSegment.from_file(file_path)
+                # Comprimir a MP3 con bitrate bajo para ahorro de espacio
+                compressed_filename = f"{task_id}_audio_{i}.mp3"
+                compressed_path = os.path.join(AUDIOS_DIR, compressed_filename)
+                audio.export(compressed_path, format="mp3", bitrate="64k")
+                compressed_paths.append(compressed_path)
+                print(f"[{task_id}] ✅ Audio {i+1} comprimido")
+            except Exception as e:
+                print(f"[{task_id}] ⚠️ Error comprimiendo audio {i+1}: {e}")
+                # Si falla, usar el original
+                compressed_paths.append(file_path)
 
         # FASE 2: RESUMEN AVANZADO
         active_tasks[task_id]['status'] = 'summarizing'
@@ -143,11 +169,12 @@ def background_processing(task_id, file_path, materia):
 
         CONTEXTO:
         - Materia: {materia}
-        - Origen: Audio real de una clase universitaria (puede ser largo, repetitivo o desordenado).
-        - Objetivo: Convertir la clase en apuntes de estudio completos, claros y bien estructurados.
+        - Origen: Audios reales de una clase universitaria (pueden ser largos, repetitivos o desordenados, y provienen de múltiples grabaciones).
+        - Objetivo: Convertir la clase completa en apuntes de estudio completos, claros y bien estructurados.
 
-        TEXTO DE LA CLASE (TRANSCRIPCIÓN):
+        TEXTO DE LA CLASE (TRANSCRIPCIÓN COMPLETA DE TODOS LOS AUDIOS):
         "{texto_completo}"
+```
 
         INSTRUCCIONES IMPORTANTES:
         - Priorizá claridad por sobre literalidad.
@@ -212,7 +239,7 @@ def background_processing(task_id, file_path, materia):
         # Recortar título si es muy largo
         titulo = titulo[:70]
 
-        item = guardar_en_historial(titulo, materia, resumen_final, datetime.datetime.now().strftime("%d/%m %H:%M"))
+        item = guardar_en_historial(titulo, materia, resumen_final, datetime.datetime.now().strftime("%d/%m %H:%M"), compressed_paths)
         
         active_tasks[task_id]['status'] = 'completed'
         active_tasks[task_id]['result'] = item
@@ -225,7 +252,8 @@ def background_processing(task_id, file_path, materia):
         active_tasks[task_id]['status'] = 'error'
         active_tasks[task_id]['message'] = msg
     finally:
-        if os.path.exists(file_path): os.remove(file_path)
+        for file_path in file_paths:
+            if os.path.exists(file_path): os.remove(file_path)
 
 @app.route('/')
 def index(): return render_template('index.html')
@@ -236,29 +264,34 @@ def upload_audio():
     if 'audio' not in request.files:
         return jsonify({"error": "No audio"}), 400
 
-    file = request.files['audio']
+    files = request.files.getlist('audio')
+    if not files or all(f.filename == '' for f in files):
+        return jsonify({"error": "No audio files"}), 400
+
     materia = request.form.get('materia', 'General')
     
-    # --- CAMBIO: Detectar extensión original o usar webm por defecto ---
-    filename_orig = file.filename
-    ext = os.path.splitext(filename_orig)[1]
-    if not ext: ext = ".webm" # Fallback para grabaciones de micrófono
-    
     task_id = str(uuid.uuid4())
-    safe_filename = f"{task_id}{ext}" # Mantiene la extensión original (mp3, wav, etc)
-    save_path = os.path.join(DATA_DIR, safe_filename)
-    
-    file.save(save_path)
+    save_paths = []
+    for file in files:
+        # Detectar extensión original o usar webm por defecto
+        filename_orig = file.filename
+        ext = os.path.splitext(filename_orig)[1]
+        if not ext: ext = ".webm"  # Fallback para grabaciones de micrófono
+        
+        safe_filename = f"{task_id}_{len(save_paths)}{ext}"  # Mantiene la extensión original (mp3, wav, etc)
+        save_path = os.path.join(DATA_DIR, safe_filename)
+        file.save(save_path)
+        save_paths.append(save_path)
 
     active_tasks[task_id] = {
         'status': 'queued',
-        'message': 'Audio recibido.',
+        'message': 'Audios recibidos.',
         'materia': materia
     }
     
     thread = threading.Thread(
         target=background_processing,
-        args=(task_id, save_path, materia)
+        args=(task_id, save_paths, materia)
     )
     thread.daemon = True
     thread.start()
@@ -279,8 +312,8 @@ def obtener_historial():
             except: return jsonify([])
     return jsonify([])
 
-@app.route('/delete/<string:item_id>', methods=['DELETE'])
-def delete_history_item(item_id):
+@app.route('/download_audios/<string:item_id>', methods=['GET'])
+def download_audios(item_id):
     try:
         if not os.path.exists(HISTORIAL_FILE):
             return jsonify({"error": "No existe el historial"}), 404
@@ -288,21 +321,27 @@ def delete_history_item(item_id):
         with open(HISTORIAL_FILE, 'r', encoding='utf-8') as f:
             history = json.load(f)
 
-        # Filtramos: Nos quedamos con todos EXCEPTO el que tenga ese ID
-        # (Chequeamos tanto 'id' como 'task_id' por seguridad)
-        initial_len = len(history)
-        new_history = [
-            item for item in history 
-            if item.get('id') != item_id and item.get('task_id') != item_id
-        ]
-
-        if len(new_history) == initial_len:
+        item = next((i for i in history if i.get('id') == item_id), None)
+        if not item:
             return jsonify({"error": "Item no encontrado"}), 404
 
-        with open(HISTORIAL_FILE, 'w', encoding='utf-8') as f:
-            json.dump(new_history, f, indent=4, ensure_ascii=False)
+        audios = item.get('audios', [])
+        if not audios:
+            return jsonify({"error": "No hay audios para este resumen"}), 404
 
-        return jsonify({"status": "deleted", "message": "Eliminado correctamente"})
+        # Crear un zip temporal
+        import zipfile
+        import io
+        
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for i, audio_path in enumerate(audios):
+                if os.path.exists(audio_path):
+                    filename = f"audio_{i+1}.mp3"
+                    zip_file.write(audio_path, filename)
+
+        zip_buffer.seek(0)
+        return send_file(zip_buffer, as_attachment=True, download_name=f"audios_{item_id}.zip", mimetype='application/zip')
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

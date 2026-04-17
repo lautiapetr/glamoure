@@ -65,6 +65,9 @@
         .btn-download { color: var(--accent); text-decoration: none; }
         .btn-download:hover { color: white; }
 
+        .btn-audio { color: #ff6b6b; }
+        .btn-audio:hover { color: #ff5252; }
+
         .btn-delete { color: var(--danger); }
         .btn-delete:hover { transform: scale(1.2); color: #ff0000; }
 
@@ -249,10 +252,10 @@
 
 <div id="controls">
     <div class="buttons-row">
-        <input type="file" id="file-input-hidden" accept="audio/*">
+        <input type="file" id="file-input-hidden" accept="audio/*" multiple>
         
         <button id="btn-upload" onclick="triggerUpload()">
-            <i class="fas fa-upload"></i> Subir Audio
+            <i class="fas fa-upload"></i> Subir Audio(s)
         </button>
 
         <button id="btn-record" onclick="startRecording()">
@@ -385,6 +388,10 @@
                                 <i class="fas fa-file-pdf"></i>
                             </button>
 
+                            ${item.audios && item.audios.length > 0 ? `<button onclick="downloadAudios('${itemId}')" class="btn-icon btn-audio" title="Descargar Audios">
+                                <i class="fas fa-music"></i>
+                            </button>` : ''}
+
                             <button onclick="deleteChat('${itemId}')" class="btn-icon btn-delete" title="Eliminar">
                                 <i class="fas fa-trash-alt"></i>
                             </button>
@@ -443,6 +450,17 @@
         html2pdf().set(opt).from(element).save();
     }
 
+    // --- FUNCIÓN DESCARGAR AUDIOS ---
+    function downloadAudios(itemId) {
+        const url = `/download_audios/${itemId}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audios_${itemId}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
     // --- FUNCIÓN QUE FALTA: BORRAR ---
     async function deleteChat(id) {
         // 1. Confirmación de seguridad
@@ -497,18 +515,20 @@
 
     // Detectar selección de archivo
     document.getElementById('file-input-hidden').addEventListener('change', function(e) {
-        if (this.files && this.files[0]) {
-            handleFileUpload(this.files[0]);
+        if (this.files && this.files.length > 0) {
+            handleFileUpload(this.files);
         }
     });
 
-    async function handleFileUpload(file) {
+    async function handleFileUpload(files) {
         updateUIState('processing');
-        document.getElementById('status-msg').innerText = "Subiendo archivo...";
+        document.getElementById('status-msg').innerText = "Subiendo archivos...";
         
         const materiaVal = document.getElementById('materia').value || "General";
         const formData = new FormData();
-        formData.append("audio", file);
+        for (let i = 0; i < files.length; i++) {
+            formData.append("audio", files[i]);
+        }
         formData.append("materia", materiaVal);
 
         try {
@@ -520,7 +540,7 @@
             alert("Error: " + error);
             updateUIState('idle');
         }
-        // Limpiar input file para permitir subir el mismo archivo de nuevo si falla
+        // Limpiar input file para permitir subir los mismos archivos de nuevo si falla
         document.getElementById('file-input-hidden').value = ''; 
     }
 
